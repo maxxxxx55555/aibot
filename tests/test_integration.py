@@ -171,3 +171,30 @@ async def test_cancel_works_without_state(engine, settings):
 
     texts = session.sent_texts()
     assert texts and "Отменено" in texts[0]
+
+
+async def test_knowledge_button_shows_chunk_count(engine, settings):
+    from app.bot.keyboards.reply import BTN_KNOWLEDGE
+    from app.services.ai.rag import RagService
+
+    dp, bot, session = await _make_dispatcher(engine, settings)
+
+    # Инициализируем пользователя через /start
+    await dp.feed_update(bot, _text_update("/start", update_id=1, user_id=888))
+
+    maker = async_sessionmaker(engine, expire_on_commit=False)
+    async with maker() as db:
+        user = await UserRepo(db).get_by_tg_id(888)
+        assert user is not None
+        user.plan = "pro"
+        await db.commit()
+
+        rag = RagService(provider=None, settings=settings)
+        await rag.add_text(db, user.id, "Кофейня работает с 8:00 до 22:00. Капучино 250р.")
+        await db.commit()
+
+    # Нажимаем кнопку reply-меню "📚 База знаний"
+    await dp.feed_update(bot, _text_update(BTN_KNOWLEDGE, update_id=2, user_id=888))
+
+    texts = session.sent_texts()
+    assert any("Загружено фрагментов: <b>1</b>" in t for t in texts)

@@ -10,6 +10,7 @@ from aiogram import F, Router
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.bot import texts
 from app.bot.handlers.knowledge import show_knowledge
@@ -18,6 +19,8 @@ from app.bot.keyboards.inline import help_kb, privacy_kb
 from app.bot.keyboards.reply import BTN_ASK, BTN_HELP, BTN_KNOWLEDGE, BTN_PLANS
 from app.bot.texts import ASK_HINT
 from app.config import Settings
+from app.db.models.user import User
+from app.db.repo.knowledge import KnowledgeRepo
 
 router = Router(name="menu")
 
@@ -64,9 +67,16 @@ async def kb_plans(message: Message, catalog, state: FSMContext) -> None:
 
 
 @router.message(F.text == BTN_KNOWLEDGE)
-async def kb_knowledge(message: Message, user, state: FSMContext, settings: Settings) -> None:
+async def kb_knowledge(
+    message: Message,
+    user: User,
+    session: AsyncSession,
+    state: FSMContext,
+    settings: Settings,
+) -> None:
     await state.clear()
-    await show_knowledge(message, user, settings)
+    chunks = await KnowledgeRepo(session).count_for_owner(user.id)
+    await show_knowledge(message, user, settings, chunks)
 
 
 @router.message(F.text == BTN_HELP)
