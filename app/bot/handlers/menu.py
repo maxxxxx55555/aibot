@@ -14,7 +14,7 @@ from aiogram.types import CallbackQuery, Message
 from app.bot import texts
 from app.bot.handlers.knowledge import show_knowledge
 from app.bot.helpers import safe_edit, send_authored
-from app.bot.keyboards.inline import help_kb, privacy_kb
+from app.bot.keyboards.inline import game_menu_kb, help_kb, privacy_kb
 from app.bot.keyboards.reply import BTN_ASK, BTN_HELP, BTN_KNOWLEDGE, BTN_PLANS
 from app.bot.texts import ASK_HINT
 from app.config import Settings
@@ -32,6 +32,21 @@ async def cmd_cancel(message: Message, state: FSMContext) -> None:
 async def cb_cancel(callback: CallbackQuery, state: FSMContext) -> None:
     await state.clear()
     await callback.answer(texts.CANCEL_DONE[:190])
+
+
+@router.callback_query(F.data == "game_menu")
+async def cb_game_menu(callback: CallbackQuery, state: FSMContext) -> None:
+    await state.clear()
+    kb = game_menu_kb()
+    intro_text = (
+        "🎮 <b>Игровой симулятор продаж «AI-Сотрудник»</b>\n\n"
+        "Проверьте свои навыки квалификации лидов или посмотрите, как бот общается с клиентами!\n"
+        "Вам предстоит диалог с виртуальным клиентом на 4 раунда.\n\n"
+        "Выберите сценарий для старта игры:"
+    )
+    if callback.message:
+        await safe_edit(callback.message, intro_text, reply_markup=kb)
+    await callback.answer()
 
 
 @router.message(Command("privacy"))
