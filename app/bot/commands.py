@@ -20,6 +20,7 @@ BOT_COMMANDS: tuple[tuple[str, str], ...] = (
     ("buy", "Тарифы и оплата (Stars)"),
     ("knowledge", "База знаний (PRO/Business)"),
     ("privacy", "Как хранятся данные"),
+    ("clear", "Очистить историю диалога"),
     ("cancel", "Отменить текущее действие"),
     ("forget_me", "Удалить все мои данные"),
 )
