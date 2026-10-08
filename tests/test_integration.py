@@ -171,3 +171,12 @@ async def test_cancel_works_without_state(engine, settings):
 
     texts = session.sent_texts()
     assert texts and "Отменено" in texts[0]
+
+
+async def test_clear_command_clears_history(engine, settings):
+    dp, bot, session = await _make_dispatcher(engine, settings)
+    await dp.feed_update(bot, _text_update("Привет!", update_id=1))
+    await dp.feed_update(bot, _text_update("/clear", update_id=2))
+
+    texts = session.sent_texts()
+    assert any("История диалога очищена" in t for t in texts)
