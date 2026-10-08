@@ -201,6 +201,7 @@ async def run() -> None:
             polling = asyncio.create_task(
                 dp.start_polling(
                     bot,
+                    polling_timeout=5,
                     handle_signals=False,
                     allowed_updates=dp.resolve_used_update_types(),
                 ),
