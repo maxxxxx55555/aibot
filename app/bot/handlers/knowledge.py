@@ -77,7 +77,6 @@ async def cb_knowledge(
         chunks = await KnowledgeRepo(session).count_for_owner(user.id)
         text += f"\n\nЗагружено фрагментов: <b>{chunks}</b>"
     await safe_edit(callback.message, text, reply_markup=knowledge_kb(user.plan != "free"))
-    await safe_edit(callback.message, text, reply_markup=knowledge_kb(user.plan != "free"))
     await callback.answer()
 
 
