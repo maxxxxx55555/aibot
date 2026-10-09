@@ -10,8 +10,8 @@ from __future__ import annotations
 from datetime import UTC, datetime
 
 from aiogram.client.session.base import BaseSession
-from aiogram.methods import SendChatAction, SendMessage
-from aiogram.types import Chat, Message, PhotoSize, Update
+from aiogram.methods import EditMessageText, SendChatAction, SendMessage
+from aiogram.types import CallbackQuery, Chat, Message, PhotoSize, Update
 from aiogram.types import User as TgUser
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
@@ -94,6 +94,24 @@ def _photo_update(update_id: int = 1, user_id: int = 777) -> Update:
     )
 
 
+def _callback_update(data: str, update_id: int = 1, user_id: int = 777) -> Update:
+    return Update(
+        update_id=update_id,
+        callback_query=CallbackQuery(
+            id=str(update_id),
+            from_user=TgUser(id=user_id, is_bot=False, first_name="Тест"),
+            chat_instance="1",
+            data=data,
+            message=Message(
+                message_id=10,
+                date=datetime.now(UTC),
+                chat=Chat(id=user_id, type="private"),
+                text="Исходное сообщение",
+            ),
+        ),
+    )
+
+
 async def test_start_command_responds_and_creates_user(engine, settings):
     dp, bot, session = await _make_dispatcher(engine, settings)
     await dp.feed_update(bot, _text_update("/start"))
@@ -171,3 +189,15 @@ async def test_cancel_works_without_state(engine, settings):
 
     texts = session.sent_texts()
     assert texts and "Отменено" in texts[0]
+
+
+async def test_knowledge_command_and_callback(engine, settings):
+    dp, bot, session = await _make_dispatcher(engine, settings)
+    await dp.feed_update(bot, _text_update("/knowledge", update_id=1))
+
+    texts = session.sent_texts()
+    assert texts and "База знаний" in texts[0]
+
+    await dp.feed_update(bot, _callback_update("knowledge", update_id=2))
+    edited = [c.text for c in session.calls if isinstance(c, EditMessageText)]
+    assert edited and "База знаний" in edited[0]
