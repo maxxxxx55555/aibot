@@ -10,6 +10,7 @@ from aiogram import F, Router
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.bot import texts
 from app.bot.handlers.knowledge import show_knowledge
@@ -18,8 +19,19 @@ from app.bot.keyboards.inline import help_kb, privacy_kb
 from app.bot.keyboards.reply import BTN_ASK, BTN_HELP, BTN_KNOWLEDGE, BTN_PLANS
 from app.bot.texts import ASK_HINT
 from app.config import Settings
+from app.db.models.user import User
+from app.db.repo.messages import MessageRepo
 
 router = Router(name="menu")
+
+
+@router.message(Command("clear"))
+async def cmd_clear(
+    message: Message, state: FSMContext, user: User, session: AsyncSession
+) -> None:
+    await state.clear()
+    await MessageRepo(session).delete_history(user.id)
+    await message.answer("🧹 <b>История диалога очищена.</b> Задайте новый вопрос!")
 
 
 @router.message(Command("cancel"))

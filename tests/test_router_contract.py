@@ -3,20 +3,20 @@
 Регрессии, которые ловит файл (task_0006):
 
 1. Повторные вызовы ``build_router()`` дают независимые root-роутеры, каждый
-   ровно с 6 суброутерами и собственными объектами хэндлеров.
+   ровно с 7 суброутерами и собственными объектами хэндлеров.
 2. После сборки ни один модульный router из ``app.bot.handlers`` не получает
    parent: aiogram запрещает подключать один Router к двум родителям
    (RuntimeError «Router is already attached»), поэтому прямая вставка
    модульных роутеров ломала бы повторную сборку dispatcher.
 3. Порядок суброутеров задаёт приоритет обработки:
-   payments -> admin -> start -> knowledge -> menu -> chat.
+   payments -> admin -> start -> game -> knowledge -> menu -> chat.
 4. У каждого суброутера есть message-хэндлеры, а клонирование сохраняет все
    регистрации наблюдаемых событий (хэндлеры, фильтры, флаги, middlewares).
 5. Повторная сборка dispatcher через ``app.main._build_dispatcher`` на новом
    engine не падает (тесты, hot-reload).
 6. ``BOT_COMMANDS``: уникальные lower-case команды, валидные для Telegram,
    включая полный пользовательский набор
-   (start/help/stats/buy/knowledge/privacy/cancel/forget_me).
+   (start/help/game/stats/buy/knowledge/privacy/cancel/forget_me).
 
 Тесты детерминированные и офлайновые: LLM_API_KEY пуст (MockProvider),
 SQLite — in-memory (StaticPool), Bot-сессии закрываются в finally.
@@ -31,15 +31,16 @@ from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 from sqlalchemy.pool import StaticPool
 
 from app.bot.commands import BOT_COMMANDS, build_bot_commands
-from app.bot.handlers import admin, chat, knowledge, menu, payments, start
+from app.bot.handlers import admin, chat, game, knowledge, menu, payments, start
 from app.bot.router import build_router
 
-EXPECTED_ORDER: tuple[str, ...] = ("payments", "admin", "start", "knowledge", "menu", "chat")
+EXPECTED_ORDER: tuple[str, ...] = ("payments", "admin", "start", "game", "knowledge", "menu", "chat")
 
 MODULE_ROUTERS: dict[str, Router] = {
     "payments": payments.router,
     "admin": admin.router,
     "start": start.router,
+    "game": game.router,
     "knowledge": knowledge.router,
     "menu": menu.router,
     "chat": chat.router,
@@ -50,7 +51,7 @@ BOT_TOKEN = "123456:TEST-TOKEN"
 
 COMMAND_RE = re.compile(r"^[a-z0-9_]{1,32}$")
 REQUIRED_COMMANDS = frozenset(
-    {"start", "help", "stats", "buy", "knowledge", "privacy", "cancel", "forget_me"}
+    {"start", "help", "game", "stats", "buy", "knowledge", "privacy", "cancel", "forget_me"}
 )
 
 
@@ -71,15 +72,15 @@ def _child_message_handler_ids(router: Router) -> set[int]:
     }
 
 
-def test_build_router_returns_independent_roots_with_six_children():
+def test_build_router_returns_independent_roots_with_seven_children():
     root_a = build_router()
     root_b = build_router()
 
     assert isinstance(root_a, Router) and isinstance(root_b, Router)
     assert root_a is not root_b, "каждый вызов build_router() обязан создавать новый root"
     assert root_a.parent_router is None and root_b.parent_router is None
-    assert len(root_a.sub_routers) == 6, "root обязан содержать 6 суброутеров"
-    assert len(root_b.sub_routers) == 6, "root обязан содержать 6 суброутеров"
+    assert len(root_a.sub_routers) == 7, "root обязан содержать 7 суброутеров"
+    assert len(root_b.sub_routers) == 7, "root обязан содержать 7 суброутеров"
 
     # Деревья не переиспользуют Router-объекты: aiogram не даёт привязать один
     # Router к двум родителям, поэтому повторная сборка ломалась бы.

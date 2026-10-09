@@ -31,6 +31,7 @@ from app.bot.middlewares.user import UserMiddleware
 from app.bot.router import build_router
 from app.config import get_settings
 from app.db.base import build_engine, build_sessionmaker, run_migrations
+from app.services.ai.audio import AudioService
 from app.services.ai.provider import build_provider
 from app.services.ai.rag import RagService
 from app.services.billing.plans import PlanCatalog
@@ -68,6 +69,7 @@ def _build_dispatcher(settings, engine) -> tuple[Dispatcher, Bot]:
     dp["usage"] = UsageService(catalog, settings.period_days)
     dp["billing"] = StarsBillingService(catalog, settings)
     dp["provider"] = build_provider(settings)
+    dp["audio"] = AudioService(dp["provider"])
     dp["rag"] = RagService(dp["provider"], settings)
 
     db_mw = DbSessionMiddleware(build_sessionmaker(engine))
@@ -199,6 +201,7 @@ async def run() -> None:
             polling = asyncio.create_task(
                 dp.start_polling(
                     bot,
+                    polling_timeout=5,
                     handle_signals=False,
                     allowed_updates=dp.resolve_used_update_types(),
                 ),
