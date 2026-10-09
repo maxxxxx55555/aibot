@@ -24,6 +24,8 @@ class LLMUnavailable(Exception):
 class AIProvider(Protocol):
     async def chat(self, messages: list[dict[str, str]]) -> Reply: ...
     async def embed(self, texts: list[str]) -> list[list[float]]: ...
+    async def transcribe_audio(self, audio_bytes: bytes, filename: str = "voice.ogg") -> str: ...
+    async def synthesize_speech(self, text: str, voice: str = "alloy") -> bytes: ...
 
 
 @dataclass(frozen=True)
@@ -52,6 +54,15 @@ class MockProvider:
 
     async def embed(self, texts: list[str]) -> list[list[float]]:
         return [self._fake_vector(t) for t in texts]
+
+    async def transcribe_audio(self, audio_bytes: bytes, filename: str = "voice.ogg") -> str:
+        await asyncio.sleep(0.05)
+        return f"[MOCK] Расшифровка голосового сообщения ({len(audio_bytes)} байт)"
+
+    async def synthesize_speech(self, text: str, voice: str = "alloy") -> bytes:
+        await asyncio.sleep(0.05)
+        from app.services.ai.audio import _generate_mock_wav
+        return _generate_mock_wav(1.0)
 
     def _fake_vector(self, text: str) -> list[float]:
         """Детерминированный нормированный вектор нужной размерности."""
@@ -141,6 +152,33 @@ class OpenAICompatProvider:
             model=self.settings.embedding_model, input=texts
         )
         return [item.embedding for item in resp.data]
+
+    async def transcribe_audio(self, audio_bytes: bytes, filename: str = "voice.ogg") -> str:
+        from io import BytesIO
+        file_obj = BytesIO(audio_bytes)
+        file_obj.name = filename
+        try:
+            resp = await self.client.audio.transcriptions.create(
+                model="whisper-1",
+                file=file_obj,
+            )
+            return resp.text or ""
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Whisper transcription error: %s", exc)
+            return "[Не удалось распознать голосовое сообщение]"
+
+    async def synthesize_speech(self, text: str, voice: str = "alloy") -> bytes:
+        try:
+            response = await self.client.audio.speech.create(
+                model="tts-1",
+                voice=voice,
+                input=text[:4096],
+            )
+            return response.content
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("TTS speech synthesis error: %s", exc)
+            from app.services.ai.audio import _generate_mock_wav
+            return _generate_mock_wav(1.0)
 
 
 def build_provider(settings: Settings) -> AIProvider:

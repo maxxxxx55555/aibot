@@ -10,11 +10,28 @@ from app.services.billing.plans import PlanCatalog
 
 def main_menu() -> InlineKeyboardMarkup:
     kb = InlineKeyboardBuilder()
+    kb.button(text="🎮 Симулятор продаж", callback_data="game_start:b2b")
     kb.button(text="⭐️ Тарифы", callback_data="plans")
     kb.button(text="📚 База знаний", callback_data="knowledge")
     kb.button(text="ℹ️ Помощь", callback_data="help")
     kb.button(text="🔐 Приватность", callback_data="privacy")
-    kb.adjust(2, 2)
+    kb.adjust(1, 2, 2)
+    return kb.as_markup()
+
+
+def game_menu_kb() -> InlineKeyboardMarkup:
+    kb = InlineKeyboardBuilder()
+    kb.button(text="🏢 B2B-клиент", callback_data="game_start:b2b")
+    kb.button(text="🏥 Сфера услуг", callback_data="game_start:services")
+    kb.button(text="⬅️ В меню", callback_data="menu")
+    kb.adjust(2, 1)
+    return kb.as_markup()
+
+
+def game_stop_kb() -> InlineKeyboardMarkup:
+    kb = InlineKeyboardBuilder()
+    kb.button(text="⏹ Остановить игру", callback_data="game_stop")
+    kb.adjust(1)
     return kb.as_markup()
 
 
