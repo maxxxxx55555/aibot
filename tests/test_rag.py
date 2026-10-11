@@ -75,3 +75,34 @@ async def test_forget_me_cascades(session, settings):
     repo = KnowledgeRepo(session)
     await repo.delete_for_owner(user.id)
     assert await repo.for_owner(user.id) == []
+
+
+async def test_knowledge_repo_count_for_owner_and_user_count_all(session):
+    u_repo = UserRepo(session)
+    u1 = await u_repo.get_or_create(101)
+    u2 = await u_repo.get_or_create(102)
+
+    k_repo = KnowledgeRepo(session)
+    await k_repo.add_chunk(u1.id, "chunk 1")
+    await k_repo.add_chunk(u1.id, "chunk 2")
+
+    assert await k_repo.count_for_owner(u1.id) == 2
+    assert await k_repo.count_for_owner(u2.id) == 0
+    assert await u_repo.count_all() >= 2
+
+
+async def test_chroma_vector_store_count(settings, monkeypatch):
+    from unittest.mock import MagicMock
+
+    from app.services.ai.vector_store import ChromaVectorStore
+
+    mock_col = MagicMock()
+    mock_col.get.return_value = {"ids": ["id-1", "id-2"]}
+
+    # Создаём экземпляр ChromaVectorStore без настоящего ChromaDB
+    store = object.__new__(ChromaVectorStore)
+    store._col = mock_col
+
+    count = await store.count(owner_id=42)
+    assert count == 2
+    mock_col.get.assert_called_once_with(where={"owner_id": 42}, include=[])
