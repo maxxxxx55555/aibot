@@ -96,6 +96,7 @@ class OpenAICompatProvider:
                 max_retries=0,
             )
             self.fallback.fallback = None
+            self.fallback._semaphore = asyncio.Semaphore(20)
         self._semaphore = asyncio.Semaphore(20)  # глобальный лимит конкурентных запросов
 
     async def chat(self, messages: list[dict[str, str]]) -> Reply:

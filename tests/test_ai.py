@@ -42,6 +42,24 @@ def test_build_provider_real_with_key(settings):
     assert not isinstance(provider, MockProvider)
 
 
+def test_openai_compat_provider_fallback_semaphore(settings):
+    import asyncio
+
+    from app.services.ai.provider import OpenAICompatProvider
+
+    local_settings = settings.model_copy(
+        update={
+            "llm_api_key": "sk-primary",
+            "llm_fallback_base_url": "https://fallback.api/v1",
+            "llm_fallback_api_key": "sk-fallback",
+        }
+    )
+    provider = OpenAICompatProvider(local_settings)
+    assert provider.fallback is not None
+    assert isinstance(provider._semaphore, asyncio.Semaphore)
+    assert isinstance(provider.fallback._semaphore, asyncio.Semaphore)
+
+
 def test_approx_tokens():
     assert approx_tokens("") == 1
     assert approx_tokens("a" * 400) == 100
