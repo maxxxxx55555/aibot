@@ -200,6 +200,7 @@ async def run() -> None:
                 dp.start_polling(
                     bot,
                     handle_signals=False,
+                    polling_timeout=10,
                     allowed_updates=dp.resolve_used_update_types(),
                 ),
                 name="polling",
