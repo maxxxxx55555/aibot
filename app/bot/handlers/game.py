@@ -29,10 +29,15 @@ async def cmd_game(event: Message, state: FSMContext) -> None:
     await state.clear()
     kb = game_menu_kb()
     intro_text = (
-        "🎮 <b>Игровой симулятор продаж «AI-Сотрудник»</b>\n\n"
-        "Проверьте свои навыки квалификации лидов или посмотрите, как бот общается с клиентами!\n"
-        "Вам предстоит диалог с виртуальным клиентом на 4 раунда.\n\n"
-        "Выберите сценарий для старта игры:"
+        "💎 <b>VIP Игровой тренажёр продаж «AI-Сотрудник»</b>\n"
+        "────────────────────────────\n"
+        "Проверьте свои навыки переговоров и квалификации лидов в захватывающем 4-раундовом поединке!\n\n"
+        "🔥 <b>Что вас ждет:</b>\n"
+        "• Реалистичные возражения бизнес-клиентов\n"
+        "• Живая оценка ответов и Combo-бонусы\n"
+        "• Подсказки AI-наставника прямо во время диалога\n"
+        "• Итоговая разборка конверсии и звания\n\n"
+        "🎯 <b>Выберите бизнес-сценарий для старта:</b>"
     )
     await send_authored(event, intro_text, reply_markup=kb)
 
@@ -42,8 +47,9 @@ async def cb_game_menu(callback: CallbackQuery, state: FSMContext) -> None:
     await state.clear()
     kb = game_menu_kb()
     intro_text = (
-        "🎮 <b>Игровой симулятор продаж «AI-Сотрудник»</b>\n\n"
-        "Выберите сценарий для старта игры:"
+        "💎 <b>VIP Игровой тренажёр продаж «AI-Сотрудник»</b>\n"
+        "────────────────────────────\n"
+        "Выберите бизнес-сценарий для старта игры:"
     )
     if callback.message:
         await safe_edit(callback.message, intro_text, reply_markup=kb)
@@ -59,6 +65,14 @@ async def cb_game_start(callback: CallbackQuery, state: FSMContext) -> None:
     if callback.message:
         await safe_edit(callback.message, intro, reply_markup=game_stop_kb())
     await callback.answer()
+
+
+@router.callback_query(F.data == "game_hint", StateFilter(GameStates.in_game))
+async def cb_game_hint(callback: CallbackQuery, state: FSMContext) -> None:
+    data = await state.get_data()
+    game_session = GameSessionState.from_dict(data)
+    hint_text = game_service.get_hint(game_session)
+    await callback.answer(hint_text[:200], show_alert=True)
 
 
 @router.callback_query(F.data == "game_stop")

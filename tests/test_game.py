@@ -1,4 +1,4 @@
-"""Автономный агентский тест-сюит и юнит-тесты для Симулятора продаж («/game»)."""
+"""Автономный агентский тест-сюит и юнит-тесты для VIP Симулятора продаж («/game»)."""
 
 from __future__ import annotations
 
@@ -10,6 +10,7 @@ from aiogram.fsm.storage.memory import MemoryStorage, StorageKey
 from aiogram.types import User as TelegramUser
 
 from app.bot.handlers.game import (
+    cb_game_hint,
     cb_game_menu,
     cb_game_start,
     cb_game_stop,
@@ -36,6 +37,7 @@ def test_game_service_start_game(game_service: SalesGameService):
         assert state.score == 0
         assert scenario.title in intro
         assert scenario.initial_message in intro
+        assert "VIP ТРЕНАЖЁР ПРОДАЖ" in intro
 
 
 def test_game_service_process_turns_to_completion(game_service: SalesGameService):
@@ -69,8 +71,8 @@ def test_game_service_process_turns_to_completion(game_service: SalesGameService
         state, "Отлично, регистрируйтесь на бесплатный тест!"
     )
     assert finished4
-    assert "Игра завершена!" in reply4
-    assert "Ваш результат:" in reply4
+    assert "ИТОГИ СИМУЛЯЦИИ" in reply4
+    assert "Суммарный счет:" in reply4
     assert state.score >= 50
 
 
@@ -80,8 +82,10 @@ def test_game_session_state_serialization():
         turn=3,
         max_turns=4,
         score=50,
+        combo=2,
         history=[{"role": "user", "text": "тест"}],
-        lead_status="Тёплый лид 🟡 (Проявил интерес)",
+        lead_status="🔥 Тёплый перспективный лид",
+        client_mood="😊 Лоялен",
     )
     data = original.to_dict()
     reconstructed = GameSessionState.from_dict(data)
@@ -89,8 +93,10 @@ def test_game_session_state_serialization():
     assert reconstructed.scenario_id == original.scenario_id
     assert reconstructed.turn == original.turn
     assert reconstructed.score == original.score
+    assert reconstructed.combo == original.combo
     assert reconstructed.history == original.history
     assert reconstructed.lead_status == original.lead_status
+    assert reconstructed.client_mood == original.client_mood
 
 
 @pytest.mark.asyncio
@@ -131,6 +137,14 @@ async def test_game_handlers_flow(settings: Settings):
     data = await fsm_ctx.get_data()
     assert data["scenario_id"] == "b2b"
 
+    # Callback game_hint
+    cb_hint = MagicMock()
+    cb_hint.data = "game_hint"
+    cb_hint.answer = AsyncMock()
+    await cb_game_hint(cb_hint, fsm_ctx)
+    cb_hint.answer.assert_called_once()
+    assert "Совет наставника" in cb_hint.answer.call_args[0][0]
+
     # Process turn message in state
     msg1 = MagicMock()
     msg1.text = "Здравствуйте! У нас автоматизация 24/7. Хотите тестовый доступ?"
@@ -140,7 +154,7 @@ async def test_game_handlers_flow(settings: Settings):
     await handle_game_turn(msg1, fsm_ctx, settings)
     msg1.answer.assert_called_once()
     answer_text = msg1.answer.call_args[0][0]
-    assert "Ответ клиента" in answer_text
+    assert "Клиент ответил" in answer_text
 
     # Non-text message during game
     non_text_msg = MagicMock()
@@ -176,7 +190,7 @@ async def test_autonomous_agent_simulator_all_scenarios(game_service: SalesGameS
         "passive": {
             "replies": ["Привет", "Цена 100", "Ок", "Пока"],
             "expected_min_score": 0,
-            "expected_max_score": 60,
+            "expected_max_score": 65,
         },
         "proactive": {
             "replies": [
@@ -201,5 +215,5 @@ async def test_autonomous_agent_simulator_all_scenarios(game_service: SalesGameS
                     assert f"Раунд {turn_idx + 1}/4" in reply_text
                 else:
                     assert is_finished, f"Scenario {scenario_id} {strat_name} did not finish at turn {turn_idx}"
-                    assert "Игра завершена!" in reply_text
+                    assert "ИТОГИ СИМУЛЯЦИИ" in reply_text
                     assert strat["expected_min_score"] <= state.score <= strat["expected_max_score"]

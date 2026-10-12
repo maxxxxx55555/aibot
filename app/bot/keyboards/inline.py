@@ -31,6 +31,7 @@ def game_menu_kb() -> InlineKeyboardMarkup:
 
 def game_stop_kb() -> InlineKeyboardMarkup:
     kb = InlineKeyboardBuilder()
+    kb.button(text="💡 Подсказка наставника", callback_data="game_hint")
     kb.button(text="⏹ Остановить игру", callback_data="game_stop")
     kb.adjust(1)
     return kb.as_markup()
