@@ -107,7 +107,44 @@ async def start_webapp(
             }
         )
 
+    from app.services.ai.game import SCENARIOS, GameSessionState, SalesGameService
+    game_service = SalesGameService()
+
+    async def api_game_scenarios(_request: web.Request) -> web.Response:
+        return web.json_response({"scenarios": [s.id for s in SCENARIOS.values()]})
+
+    async def api_game_start(request: web.Request) -> web.Response:
+        data = await request.json() if request.has_body else {}
+        scenario_id = data.get("scenario_id", "b2b")
+        state, intro = game_service.start_game(scenario_id)
+        return web.json_response({"state": state.to_dict(), "intro": intro})
+
+    async def api_game_turn(request: web.Request) -> web.Response:
+        data = await request.json()
+        state = GameSessionState.from_dict(data.get("state", {}))
+        user_text = data.get("user_text", "")
+        state, reply, finished = game_service.process_turn(state, user_text)
+        return web.json_response({"state": state.to_dict(), "reply": reply, "finished": finished})
+
+    async def api_game_hint(request: web.Request) -> web.Response:
+        data = await request.json()
+        state = GameSessionState.from_dict(data.get("state", {}))
+        hint = game_service.get_hint(state)
+        return web.json_response({"hint": hint})
+
+    async def game_app_page(_request: web.Request) -> web.Response:
+        from pathlib import Path
+        html_path = Path(__file__).parent / "webapp" / "index.html"
+        if html_path.exists():
+            return web.FileResponse(html_path)
+        return web.Response(text="Web App Not Found", status=444)
+
     app.router.add_get("/health", health)
+    app.router.add_get("/game_app", game_app_page)
+    app.router.add_get("/api/game/scenarios", api_game_scenarios)
+    app.router.add_post("/api/game/start", api_game_start)
+    app.router.add_post("/api/game/turn", api_game_turn)
+    app.router.add_post("/api/game/hint", api_game_hint)
 
     runner = web.AppRunner(app)
     await runner.setup()
