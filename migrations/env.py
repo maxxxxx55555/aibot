@@ -54,6 +54,11 @@ def _do_run_migrations(connection: Connection) -> None:
 
 
 async def run_async_migrations() -> None:
+    db_url = config.get_main_option("sqlalchemy.url")
+    if db_url and db_url.startswith("sqlite"):
+        from app.db.base import _ensure_sqlite_dir
+        _ensure_sqlite_dir(db_url)
+
     connectable = async_engine_from_config(
         config.get_section(config.config_ini_section, {}),
         prefix="sqlalchemy.",
