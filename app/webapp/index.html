@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>💎 VIP Sales Simulator Android App</title>
+    <style>
+        :root {
+            --bg-color: #0f172a;
+            --card-bg: #1e293b;
+            --accent: #38bdf8;
+            --accent-green: #22c55e;
+            --text-main: #f8fafc;
+            --text-sub: #94a3b8;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+        body { background: var(--bg-color); color: var(--text-main); display: flex; justify-content: center; height: 100vh; overflow: hidden; }
+        .app-container { width: 100%; max-width: 480px; height: 100%; display: flex; flex-direction: column; background: #090d16; border-left: 1px solid #1e293b; border-right: 1px solid #1e293b; position: relative; }
+        .header { padding: 16px; background: #1e293b; text-align: center; border-bottom: 1px solid #334155; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.3); }
+        .header h1 { font-size: 18px; color: var(--accent); }
+        .header p { font-size: 12px; color: var(--text-sub); margin-top: 2px; }
+        .chat-area { flex: 1; padding: 16px; overflow-y: auto; display: flex; flex-direction: column; gap: 12px; }
+        .message { max-width: 85%; padding: 12px 16px; border-radius: 16px; font-size: 14px; line-height: 1.4; word-wrap: break-word; }
+        .message.client { background: #1e293b; color: #e2e8f0; align-self: flex-start; border-bottom-left-radius: 4px; border: 1px solid #334155; }
+        .message.user { background: #0284c7; color: white; align-self: flex-end; border-bottom-right-radius: 4px; }
+        .message.system { background: #334155; color: #f1f5f9; align-self: center; font-size: 12px; text-align: center; max-width: 95%; border-radius: 8px; }
+        .status-bar { padding: 10px 16px; background: #0f172a; border-top: 1px solid #1e293b; font-size: 13px; display: flex; justify-content: space-between; align-items: center; color: var(--text-sub); }
+        .progress-fill { color: var(--accent-green); font-weight: bold; }
+        .controls { padding: 12px 16px; background: #1e293b; border-top: 1px solid #334155; display: flex; flex-direction: column; gap: 8px; }
+        .input-row { display: flex; gap: 8px; }
+        input[type="text"] { flex: 1; padding: 12px; border-radius: 20px; border: 1px solid #475569; background: #0f172a; color: white; font-size: 14px; outline: none; }
+        input[type="text"]:focus { border-color: var(--accent); }
+        button { padding: 10px 16px; border-radius: 20px; border: none; font-weight: 600; cursor: pointer; font-size: 13px; transition: all 0.2s; }
+        .btn-send { background: var(--accent); color: #0f172a; }
+        .btn-hint { background: #eab308; color: #0f172a; width: 100%; }
+        .scenario-select { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 8px; }
+        .sc-btn { background: #334155; color: white; white-space: nowrap; }
+        .sc-btn.active { background: var(--accent); color: #0f172a; }
+    </style>
+</head>
+<body>
+    <div class="app-container">
+        <div class="header">
+            <h1>💎 VIP Sales Simulator</h1>
+            <p>Android Mobile App Edition</p>
+        </div>
+        <div id="status" class="status-bar">
+            <span>Счет: <span id="score" class="progress-fill">0/100</span></span>
+            <span id="mood">🎭 😒 Скептичен</span>
+        </div>
+        <div id="chat" class="chat-area">
+            <div class="message system">Выберите сценарий и начните симуляцию сделки!</div>
+        </div>
+        <div class="controls">
+            <div class="scenario-select">
+                <button class="sc-btn active" onclick="startGame('b2b')">🏢 B2B</button>
+                <button class="sc-btn" onclick="startGame('services')">🏥 Клиника</button>
+                <button class="sc-btn" onclick="startGame('ecommerce')">🛒 E-Commerce</button>
+            </div>
+            <button class="btn-hint" onclick="getHint()">💡 Подсказка AI-наставника</button>
+            <div class="input-row">
+                <input type="text" id="userInput" placeholder="Ваш ответ клиенту..." onkeypress="if(event.key==='Enter') sendTurn()">
+                <button class="btn-send" onclick="sendTurn()">Отправить</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let currentState = null;
+
+        async function startGame(scenarioId) {
+            const res = await fetch('/api/game/start', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({scenario_id: scenarioId})
+            });
+            const data = await res.json();
+            currentState = data.state;
+            const chat = document.getElementById('chat');
+            chat.innerHTML = `<div class="message client">${data.intro.replace(/\n/g, '<br>')}</div>`;
+            updateStatus();
+        }
+
+        async function sendTurn() {
+            const input = document.getElementById('userInput');
+            const text = input.value.trim();
+            if (!text || !currentState) return;
+
+            appendMessage(text, 'user');
+            input.value = '';
+
+            const res = await fetch('/api/game/turn', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({state: currentState, user_text: text})
+            });
+            const data = await res.json();
+            currentState = data.state;
+
+            appendMessage(data.reply.replace(/\n/g, '<br>'), data.finished ? 'system' : 'client');
+            updateStatus();
+        }
+
+        async function getHint() {
+            if (!currentState) return;
+            const res = await fetch('/api/game/hint', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({state: currentState})
+            });
+            const data = await res.json();
+            alert(data.hint.replace(/<[^>]*>?/gm, ''));
+        }
+
+        function appendMessage(text, type) {
+            const chat = document.getElementById('chat');
+            const msg = document.createElement('div');
+            msg.className = `message ${type}`;
+            msg.innerHTML = text;
+            chat.appendChild(msg);
+            chat.scrollTop = chat.scrollHeight;
+        }
+
+        function updateStatus() {
+            if (!currentState) return;
+            document.getElementById('score').innerText = `${currentState.score}/100`;
+            document.getElementById('mood').innerText = `🎭 ${currentState.client_mood}`;
+        }
+
+        // Авто-старт
+        startGame('b2b');
+    </script>
+</body>
+</html>
