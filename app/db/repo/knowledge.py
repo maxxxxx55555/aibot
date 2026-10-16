@@ -1,4 +1,4 @@
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select
 
 from app.db.models.knowledge import KnowledgeBase
 from app.db.repo.base import BaseRepo
@@ -27,10 +27,11 @@ class KnowledgeRepo(BaseRepo[KnowledgeBase]):
         return list(result.scalars().all())
 
     async def count_for_owner(self, owner_id: int) -> int:
-        result = await self.session.execute(
-            select(KnowledgeBase.id).where(KnowledgeBase.owner_id == owner_id)
-        )
-        return len(result.all())
+        return (
+            await self.session.execute(
+                select(func.count(KnowledgeBase.id)).where(KnowledgeBase.owner_id == owner_id)
+            )
+        ).scalar_one() or 0
 
     async def search(self, owner_id: int, query: str, top_k: int = 5) -> list[KnowledgeBase]:
         """Топ-K релевантных чанков (BM25-lite, services/ai/scoring.py).
