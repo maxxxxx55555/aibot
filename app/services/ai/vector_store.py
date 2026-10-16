@@ -102,7 +102,8 @@ class ChromaVectorStore:
 
     async def count(self, owner_id: int) -> int:
         def _count() -> int:
-            return self._col.count(where={"owner_id": owner_id})
+            res = self._col.get(where={"owner_id": owner_id}, include=[])
+            return len(res.get("ids") or [])
 
         return await asyncio.to_thread(_count)
 
