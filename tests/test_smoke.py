@@ -97,3 +97,21 @@ async def test_vector_store_factory_chroma_fallback_without_pkg(session, setting
         assert not isinstance(store, SQLiteVectorStore)
     else:
         assert isinstance(store, SQLiteVectorStore)
+
+
+async def test_cb_knowledge_handler(session, settings):
+    from unittest.mock import AsyncMock, MagicMock
+
+    from app.bot.handlers.knowledge import cb_knowledge
+    from app.db.models.user import User
+
+    user = User(id=1, tg_id=12345, plan="free")
+    cb = MagicMock()
+    cb.message = MagicMock()
+    cb.message.edit_text = AsyncMock()
+    cb.answer = AsyncMock()
+
+    await cb_knowledge(cb, user, session, settings)
+
+    assert cb.message.edit_text.call_count == 1
+    cb.answer.assert_called_once()
