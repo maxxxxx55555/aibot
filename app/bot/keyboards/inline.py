@@ -1,8 +1,8 @@
-"""Inline-клавиатуры: меню, выбор тарифа, апсейл."""
+"""Inline-клавиатуры: меню, выбор тарифа, апсейл, тренажёр продаж."""
 
 from __future__ import annotations
 
-from aiogram.types import InlineKeyboardMarkup
+from aiogram.types import InlineKeyboardMarkup, WebAppInfo
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 from app.services.billing.plans import PlanCatalog
@@ -10,11 +10,41 @@ from app.services.billing.plans import PlanCatalog
 
 def main_menu() -> InlineKeyboardMarkup:
     kb = InlineKeyboardBuilder()
+    kb.button(text="🎮 Тренажёр продаж", callback_data="game_menu")
     kb.button(text="⭐️ Тарифы", callback_data="plans")
     kb.button(text="📚 База знаний", callback_data="knowledge")
     kb.button(text="ℹ️ Помощь", callback_data="help")
     kb.button(text="🔐 Приватность", callback_data="privacy")
-    kb.adjust(2, 2)
+    kb.adjust(1, 2, 2)
+    return kb.as_markup()
+
+
+def game_menu_kb(webapp_url: str | None = None) -> InlineKeyboardMarkup:
+    kb = InlineKeyboardBuilder()
+    kb.button(text="🏢 B2B SaaS (Автоматизация)", callback_data="game_start:b2b")
+    kb.button(text="🏥 Клиника (Сфера услуг)", callback_data="game_start:services")
+    kb.button(text="🛒 E-commerce (Ритейл)", callback_data="game_start:ecommerce")
+    if webapp_url:
+        kb.button(text="📱 Открыть WebApp версию", web_app=WebAppInfo(url=webapp_url))
+    kb.button(text="⬅️ В меню", callback_data="menu")
+    kb.adjust(1)
+    return kb.as_markup()
+
+
+def game_stop_kb() -> InlineKeyboardMarkup:
+    kb = InlineKeyboardBuilder()
+    kb.button(text="💡 Подсказка AI-наставника", callback_data="game_hint")
+    kb.button(text="🛑 Завершить игру", callback_data="game_stop")
+    kb.adjust(1)
+    return kb.as_markup()
+
+
+def game_end_kb() -> InlineKeyboardMarkup:
+    kb = InlineKeyboardBuilder()
+    kb.button(text="🔄 Играть снова", callback_data="game_menu")
+    kb.button(text="📚 Загрузить базу знаний", callback_data="knowledge")
+    kb.button(text="⬅️ В меню", callback_data="menu")
+    kb.adjust(1)
     return kb.as_markup()
 
 

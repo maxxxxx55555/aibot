@@ -15,6 +15,7 @@ Telegram Stars (Freemium / Pro / Business).
 
 ## Возможности MVP (v1)
 
+- ✅ Игровой тренажёр продаж (`/game`): 4-раундовый симулятор квалификации лидов с подсказками AI-наставника и WebApp
 - ✅ Диалог с LLM от лица вашего бизнеса (OpenAI-совместимый API: Groq/OpenRouter/GLM/OpenAI)
 - ✅ База знаний (RAG): текст сообщением или файл `.txt`/`.md` — бот отвечает строго по вашим данным
 - ✅ Freemium-лимиты: атомарное списание, скользящие 30 дней, ленивый сброс
@@ -92,7 +93,7 @@ docker compose --profile prod up -d --build
 ## Тесты
 
 ```bash
-pytest -q                                    # 88 тестов: лимиты, биллинг, RAG, роутеры, интеграция
+pytest -q                                    # 96 тестов: лимиты, тренажёр продаж, биллинг, RAG, роутеры, WebApp
 ruff check app migrations tests              # линтер
 python -m compileall -q app migrations tests  # синтаксическая проверка
 ```
