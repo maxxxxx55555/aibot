@@ -16,6 +16,7 @@ import contextlib
 import logging
 import signal
 import time
+from pathlib import Path
 
 from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
@@ -31,6 +32,7 @@ from app.bot.middlewares.user import UserMiddleware
 from app.bot.router import build_router
 from app.config import get_settings
 from app.db.base import build_engine, build_sessionmaker, run_migrations
+from app.services.ai.game import SCENARIOS, GameSessionState, SalesGameService
 from app.services.ai.provider import build_provider
 from app.services.ai.rag import RagService
 from app.services.billing.plans import PlanCatalog
@@ -82,10 +84,14 @@ def _build_dispatcher(settings, engine) -> tuple[Dispatcher, Bot]:
 
 
 async def start_webapp(
-    host: str, port: int, webhook_path: str | None, dp: Dispatcher, bot: Bot,
+    host: str,
+    port: int,
+    webhook_path: str | None,
+    dp: Dispatcher,
+    bot: Bot,
     webhook_secret: str | None = None,
 ):
-    """aiohttp-сервер: /health всегда + webhook-роут при webhook-режиме."""
+    """aiohttp-сервер: /health всегда + webhook-роут при webhook-режиме + WebApp/REST API."""
     from aiogram.webhook.aiohttp_server import SimpleRequestHandler
     from aiohttp import web
 
@@ -107,7 +113,55 @@ async def start_webapp(
             }
         )
 
+    game_service = SalesGameService()
+
+    async def api_game_scenarios(_request: web.Request) -> web.Response:
+        return web.json_response({"scenarios": [s.id for s in SCENARIOS.values()]})
+
+    async def api_game_start(request: web.Request) -> web.Response:
+        try:
+            data = await request.json() if request.has_body else {}
+        except Exception:  # noqa: BLE001
+            data = {}
+        scenario_id = data.get("scenario_id", "b2b") if isinstance(data, dict) else "b2b"
+        state, intro = game_service.start_game(scenario_id)
+        return web.json_response({"state": state.to_dict(), "intro": intro})
+
+    async def api_game_turn(request: web.Request) -> web.Response:
+        try:
+            data = await request.json() if request.has_body else {}
+        except Exception:  # noqa: BLE001
+            data = {}
+        state_dict = data.get("state", {}) if isinstance(data, dict) else {}
+        state = GameSessionState.from_dict(state_dict)
+        user_text = data.get("user_text", "") if isinstance(data, dict) else ""
+        state, reply, finished = game_service.process_turn(state, user_text)
+        return web.json_response(
+            {"state": state.to_dict(), "reply": reply, "finished": finished}
+        )
+
+    async def api_game_hint(request: web.Request) -> web.Response:
+        try:
+            data = await request.json() if request.has_body else {}
+        except Exception:  # noqa: BLE001
+            data = {}
+        state_dict = data.get("state", {}) if isinstance(data, dict) else {}
+        state = GameSessionState.from_dict(state_dict)
+        hint = game_service.get_hint(state)
+        return web.json_response({"hint": hint})
+
+    async def game_app_page(_request: web.Request) -> web.Response:
+        html_path = Path(__file__).parent / "webapp" / "index.html"
+        if html_path.exists():
+            return web.FileResponse(html_path)
+        return web.Response(text="Web App Not Found", status=404)
+
     app.router.add_get("/health", health)
+    app.router.add_get("/game_app", game_app_page)
+    app.router.add_get("/api/game/scenarios", api_game_scenarios)
+    app.router.add_post("/api/game/start", api_game_start)
+    app.router.add_post("/api/game/turn", api_game_turn)
+    app.router.add_post("/api/game/hint", api_game_hint)
 
     runner = web.AppRunner(app)
     await runner.setup()
@@ -178,7 +232,11 @@ async def run() -> None:
         logger.info("Webhook установлен: %s", webhook_url)
 
     runner = await start_webapp(
-        settings.webapp_host, settings.webapp_port, webhook_path, dp, bot,
+        settings.webapp_host,
+        settings.webapp_port,
+        webhook_path,
+        dp,
+        bot,
         webhook_secret=settings.webhook_secret_token or None,
     )
 
