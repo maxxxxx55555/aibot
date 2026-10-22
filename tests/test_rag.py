@@ -75,3 +75,53 @@ async def test_forget_me_cascades(session, settings):
     repo = KnowledgeRepo(session)
     await repo.delete_for_owner(user.id)
     assert await repo.for_owner(user.id) == []
+
+
+async def test_repo_count_queries(session):
+    u1 = await UserRepo(session).get_or_create(101)
+    u2 = await UserRepo(session).get_or_create(102)
+    user_repo = UserRepo(session)
+    knowledge_repo = KnowledgeRepo(session)
+
+    initial_users = await user_repo.count_all()
+    assert initial_users >= 2
+
+    assert await knowledge_repo.count_for_owner(u1.id) == 0
+    await knowledge_repo.add_chunk(u1.id, "chunk 1")
+    await knowledge_repo.add_chunk(u1.id, "chunk 2")
+    assert await knowledge_repo.count_for_owner(u1.id) == 2
+    assert await knowledge_repo.count_for_owner(u2.id) == 0
+
+
+async def test_kb_knowledge_menu_button(session, settings):
+    from aiogram.fsm.context import FSMContext
+    from aiogram.fsm.storage.memory import MemoryStorage, StorageKey
+    from aiogram.types import Chat
+    from aiogram.types import User as TgUser
+
+    from app.bot.handlers.menu import kb_knowledge
+
+    user = await UserRepo(session).get_or_create(555)
+    await UserRepo(session).set_plan(user, "pro", 30)
+    await KnowledgeRepo(session).add_chunk(user.id, "Информация 1")
+    await KnowledgeRepo(session).add_chunk(user.id, "Информация 2")
+
+    sent_messages = []
+
+    class FakeMessage:
+        def __init__(self) -> None:
+            self.chat = Chat(id=555, type="private")
+            self.from_user = TgUser(id=555, is_bot=False, first_name="Test")
+
+        async def answer(self, text, reply_markup=None, link_preview_options=None):
+            sent_messages.append(text)
+
+    storage = MemoryStorage()
+    key = StorageKey(bot_id=123, chat_id=555, user_id=555)
+    state = FSMContext(storage=storage, key=key)
+
+    msg = FakeMessage()
+    await kb_knowledge(msg, user, session, state, settings)
+
+    assert sent_messages
+    assert "Загружено фрагментов: <b>2</b>" in sent_messages[0]
