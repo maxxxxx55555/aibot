@@ -33,7 +33,9 @@ async def cmd_start(
     user: User,
     catalog: PlanCatalog,
     session: AsyncSession,
+    state: FSMContext,
 ) -> None:
+    await state.clear()
     await session.refresh(user)  # актуальный лимит после возможного ленивого сброса
     name = message.from_user.first_name if message.from_user else "друг"
     if command.args:
