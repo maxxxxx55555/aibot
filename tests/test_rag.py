@@ -75,3 +75,30 @@ async def test_forget_me_cascades(session, settings):
     repo = KnowledgeRepo(session)
     await repo.delete_for_owner(user.id)
     assert await repo.for_owner(user.id) == []
+
+
+async def test_cb_knowledge_edits_message_once(session, settings, monkeypatch):
+    from unittest.mock import AsyncMock, MagicMock
+
+    from app.bot.handlers.knowledge import cb_knowledge
+
+    user = await UserRepo(session).get_or_create(10)
+    user.plan = "pro"
+    await session.commit()
+
+    callback = AsyncMock()
+    callback.message = MagicMock()
+    callback.answer = AsyncMock()
+
+    edited_count = 0
+
+    async def mock_safe_edit(msg, text, reply_markup=None):
+        nonlocal edited_count
+        edited_count += 1
+
+    monkeypatch.setattr("app.bot.handlers.knowledge.safe_edit", mock_safe_edit)
+
+    await cb_knowledge(callback, user, session, settings)
+
+    assert edited_count == 1
+    callback.answer.assert_called_once()
