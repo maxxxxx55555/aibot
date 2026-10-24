@@ -86,9 +86,11 @@ class OpenAICompatProvider:
             max_retries=0,  # ретраи контролируем сами
         )
         self.fallback: OpenAICompatProvider | None = None
+        self._semaphore = asyncio.Semaphore(20)  # глобальный лимит конкурентных запросов
         if settings.llm_fallback_base_url and settings.llm_fallback_api_key:
             self.fallback = OpenAICompatProvider.__new__(OpenAICompatProvider)
             self.fallback.settings = settings
+            self.fallback.model = settings.llm_fallback_model
             self.fallback.client = AsyncOpenAI(
                 base_url=settings.llm_fallback_base_url,
                 api_key=settings.llm_fallback_api_key,
@@ -96,7 +98,7 @@ class OpenAICompatProvider:
                 max_retries=0,
             )
             self.fallback.fallback = None
-        self._semaphore = asyncio.Semaphore(20)  # глобальный лимит конкурентных запросов
+            self.fallback._semaphore = self._semaphore
 
     async def chat(self, messages: list[dict[str, str]]) -> Reply:
         try:
