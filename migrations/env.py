@@ -10,6 +10,7 @@ from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import async_engine_from_config
 
 from app.config import get_settings
+from app.db.base import _ensure_sqlite_dir
 from app.db.models import Base
 
 config = context.config
@@ -20,7 +21,9 @@ if config.config_file_name is not None:
 target_metadata = Base.metadata
 
 # URL — единственный источник истины: .env → app.config
-config.set_main_option("sqlalchemy.url", get_settings().database_url)
+db_url = get_settings().database_url
+_ensure_sqlite_dir(db_url)
+config.set_main_option("sqlalchemy.url", db_url)
 
 
 def include_object(
