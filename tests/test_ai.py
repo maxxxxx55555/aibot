@@ -61,3 +61,58 @@ def test_build_context_respects_budget():
 def test_build_context_empty_history():
     messages = build_context("sys", [], 10, 100)
     assert messages == [{"role": "system", "content": "sys"}]
+
+
+def test_openai_compat_provider_fallback_init(settings):
+    from app.services.ai.provider import OpenAICompatProvider
+
+    settings = settings.model_copy(
+        update={
+            "llm_api_key": "sk-primary",
+            "llm_fallback_base_url": "https://fallback.example.com/v1",
+            "llm_fallback_api_key": "sk-fallback",
+            "llm_fallback_model": "fallback-model",
+        }
+    )
+    provider = OpenAICompatProvider(settings)
+    assert provider.fallback is not None
+    assert provider.fallback.model == "fallback-model"
+    assert provider.fallback._semaphore is provider._semaphore
+
+
+async def test_openai_compat_provider_fallback_execution(settings):
+    from unittest.mock import AsyncMock, MagicMock, patch
+
+    from app.services.ai.provider import OpenAICompatProvider
+
+    settings = settings.model_copy(
+        update={
+            "llm_api_key": "sk-primary",
+            "llm_fallback_base_url": "https://fallback.example.com/v1",
+            "llm_fallback_api_key": "sk-fallback",
+            "llm_fallback_model": "fallback-model",
+            "llm_max_retries": 1,
+        }
+    )
+    provider = OpenAICompatProvider(settings)
+
+    primary_err = Exception("Primary failed")
+    primary_err.status_code = 500  # type: ignore[attr-defined]
+
+    mock_resp = MagicMock()
+    mock_resp.choices = [MagicMock(message=MagicMock(content="Fallback answer"))]
+    mock_resp.usage = MagicMock(total_tokens=15)
+
+    mock_fallback_create = AsyncMock(return_value=mock_resp)
+
+    with patch.object(
+        provider.client.chat.completions, "create", side_effect=primary_err
+    ), patch.object(
+        provider.fallback.client.chat, "completions", MagicMock(create=mock_fallback_create)
+    ):
+        reply = await provider.chat([{"role": "user", "content": "hello"}])
+        assert reply.content == "Fallback answer"
+        assert reply.tokens == 15
+        mock_fallback_create.assert_called_once_with(
+            model="fallback-model", messages=[{"role": "user", "content": "hello"}]
+        )
