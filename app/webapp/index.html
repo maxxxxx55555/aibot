@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>VIP Sales Simulator WebApp</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <style>
+        :root {
+            --bg-color: var(--tg-theme-bg-color, #121824);
+            --card-bg: var(--tg-theme-secondary-bg-color, #1e2638);
+            --text-color: var(--tg-theme-text-color, #ffffff);
+            --hint-color: var(--tg-theme-hint-color, #8e9aaf);
+            --button-bg: var(--tg-theme-button-color, #3b82f6);
+            --button-text: var(--tg-theme-button-text-color, #ffffff);
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            margin: 0;
+            padding: 12px;
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            box-sizing: border-box;
+        }
+        .header {
+            background: var(--card-bg);
+            padding: 12px;
+            border-radius: 12px;
+            margin-bottom: 10px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+        }
+        .title { font-size: 16px; font-weight: bold; color: #60a5fa; margin-bottom: 4px; }
+        .stats { display: flex; justify-content: space-between; font-size: 13px; color: var(--hint-color); }
+        .chat-container {
+            flex: 1;
+            overflow-y: auto;
+            background: var(--card-bg);
+            border-radius: 12px;
+            padding: 12px;
+            margin-bottom: 10px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+        .message {
+            max-width: 85%;
+            padding: 10px 14px;
+            border-radius: 12px;
+            font-size: 14px;
+            line-height: 1.4;
+        }
+        .client { background: #2d3748; align-self: flex-start; border-bottom-left-radius: 2px; }
+        .user { background: var(--button-bg); color: var(--button-text); align-self: flex-end; border-bottom-right-radius: 2px; }
+        .system { background: #1e3a5f; border: 1px solid #3b82f6; align-self: center; width: 90%; text-align: center; }
+        .controls { display: flex; gap: 8px; }
+        input {
+            flex: 1;
+            padding: 12px;
+            border-radius: 10px;
+            border: 1px solid #374151;
+            background: #1f2937;
+            color: white;
+            font-size: 14px;
+            outline: none;
+        }
+        button {
+            padding: 12px 16px;
+            border-radius: 10px;
+            border: none;
+            background: var(--button-bg);
+            color: var(--button-text);
+            font-weight: bold;
+            cursor: pointer;
+        }
+        .hint-btn { background: #f59e0b; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div class="title" id="scenarioTitle">💎 VIP Тренажёр продаж AI</div>
+        <div class="stats">
+            <span id="score">Счет: 0/100</span>
+            <span id="mood">🎭 Скептичен</span>
+        </div>
+    </div>
+
+    <div class="chat-container" id="chat"></div>
+
+    <div class="controls">
+        <button class="hint-btn" onclick="getHint()">💡</button>
+        <input type="text" id="userInput" placeholder="Напишите ваш ответ клиенту..." onkeypress="if(event.key==='Enter') sendTurn()">
+        <button onclick="sendTurn()">Отправить</button>
+    </div>
+
+    <script>
+        const tg = window.Telegram?.WebApp;
+        if (tg) tg.expand();
+
+        let currentState = null;
+
+        async function startGame(scenarioId) {
+            const res = await fetch('/api/game/start', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({scenario_id: scenarioId})
+            });
+            const data = await res.json();
+            currentState = data.state;
+
+            const chat = document.getElementById('chat');
+            chat.innerHTML = `<div class="message system">${data.intro.replace(/\n/g, '<br>')}</div>`;
+            updateStatus();
+        }
+
+        async function sendTurn() {
+            const input = document.getElementById('userInput');
+            const text = input.value.trim();
+            if (!text || !currentState) return;
+
+            appendMessage(text, 'user');
+            input.value = '';
+
+            const res = await fetch('/api/game/turn', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({state: currentState, user_text: text})
+            });
+            const data = await res.json();
+            currentState = data.state;
+
+            appendMessage(data.reply.replace(/\n/g, '<br>'), data.finished ? 'system' : 'client');
+            updateStatus();
+        }
+
+        async function getHint() {
+            if (!currentState) return;
+            const res = await fetch('/api/game/hint', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({state: currentState})
+            });
+            const data = await res.json();
+            alert(data.hint.replace(/<[^>]*>?/gm, ''));
+        }
+
+        function appendMessage(text, type) {
+            const chat = document.getElementById('chat');
+            const msg = document.createElement('div');
+            msg.className = `message ${type}`;
+            if (type === 'user') {
+                msg.textContent = text;
+            } else {
+                msg.innerHTML = text;
+            }
+            chat.appendChild(msg);
+            chat.scrollTop = chat.scrollHeight;
+        }
+
+        function updateStatus() {
+            if (!currentState) return;
+            document.getElementById('score').innerText = `${currentState.score}/100`;
+            document.getElementById('mood').innerText = `🎭 ${currentState.client_mood}`;
+        }
+
+        // Авто-старт
+        startGame('b2b');
+    </script>
+</body>
+</html>

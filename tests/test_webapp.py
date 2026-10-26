@@ -1,4 +1,4 @@
-"""Health-сервер: /health отвечает в polling-режиме (без Telegram-токена)."""
+"""Health-сервер и WebApp API: /health, /game_app и /api/game/*."""
 
 from __future__ import annotations
 
@@ -28,6 +28,60 @@ async def test_health_endpoint():
             assert data["mode"] == "polling"
             assert data["version"] == __version__
             assert isinstance(data["uptime_s"], int) and data["uptime_s"] >= 0
+    finally:
+        await runner.cleanup()
+
+
+async def test_game_webapp_endpoints():
+    """Проверка работы интерфейса WebApp и REST API симулятора."""
+    from aiohttp import ClientSession
+
+    from app.main import start_webapp
+
+    runner = await start_webapp("127.0.0.1", 18097, None, None, None)
+    try:
+        async with ClientSession() as http:
+            # 1. /game_app (HTML page)
+            async with http.get("http://127.0.0.1:18097/game_app") as resp:
+                assert resp.status == 200
+                html = await resp.text()
+                assert "VIP Sales Simulator WebApp" in html
+
+            # 2. /api/game/scenarios
+            async with http.get("http://127.0.0.1:18097/api/game/scenarios") as resp:
+                assert resp.status == 200
+                scenarios_data = await resp.json()
+                assert "scenarios" in scenarios_data
+                assert len(scenarios_data["scenarios"]) >= 3
+
+            # 3. /api/game/start
+            async with http.post(
+                "http://127.0.0.1:18097/api/game/start", json={"scenario_id": "b2b"}
+            ) as resp:
+                assert resp.status == 200
+                start_data = await resp.json()
+                assert "state" in start_data
+                assert "intro" in start_data
+
+            state = start_data["state"]
+
+            # 4. /api/game/turn
+            async with http.post(
+                "http://127.0.0.1:18097/api/game/turn",
+                json={"state": state, "user_text": "Добрый день! Какая цена?"},
+            ) as resp:
+                assert resp.status == 200
+                turn_data = await resp.json()
+                assert "reply" in turn_data
+                assert not turn_data["finished"]
+
+            # 5. /api/game/hint
+            async with http.post(
+                "http://127.0.0.1:18097/api/game/hint", json={"state": state}
+            ) as resp:
+                assert resp.status == 200
+                hint_data = await resp.json()
+                assert "hint" in hint_data
     finally:
         await runner.cleanup()
 

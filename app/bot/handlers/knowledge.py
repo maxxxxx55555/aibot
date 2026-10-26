@@ -77,7 +77,6 @@ async def cb_knowledge(
         chunks = await KnowledgeRepo(session).count_for_owner(user.id)
         text += f"\n\nЗагружено фрагментов: <b>{chunks}</b>"
     await safe_edit(callback.message, text, reply_markup=knowledge_kb(user.plan != "free"))
-    await safe_edit(callback.message, text, reply_markup=knowledge_kb(user.plan != "free"))
     await callback.answer()
 
 
@@ -88,7 +87,7 @@ async def cb_knowledge_add(
     if user.plan == "free":
         await callback.answer(texts.NEED_PLAN, show_alert=True)
         return
-    await state.set_state(KnowledgeStates.waiting_text)
+    await state.set_state(KnowledgeStates.waiting_for_text)
     await safe_edit(
         callback.message,
         "📚 Отправьте текст базы знаний одним сообщением "
@@ -100,7 +99,7 @@ async def cb_knowledge_add(
 
 
 @router.message(
-    KnowledgeStates.waiting_text,
+    KnowledgeStates.waiting_for_text,
     F.text,
     ~F.text.in_(BUTTON_LABELS),
     ~F.text.startswith("/"),
@@ -128,7 +127,7 @@ async def save_knowledge(
     await message.answer(texts.knowledge_saved(added))
 
 
-@router.message(KnowledgeStates.waiting_text, F.document)
+@router.message(KnowledgeStates.waiting_for_text, F.document)
 async def save_knowledge_file(
     message: Message,
     state: FSMContext,
@@ -174,7 +173,7 @@ async def save_knowledge_file(
     await message.answer(texts.knowledge_file_saved(added, filename))
 
 
-@router.message(KnowledgeStates.waiting_text)
+@router.message(KnowledgeStates.waiting_for_text)
 async def knowledge_wrong_type(message: Message) -> None:
     await message.answer(
         "✋ Отправьте текст сообщением или файлом .txt/.md. Для отмены: /cancel"
