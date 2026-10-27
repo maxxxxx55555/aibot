@@ -42,6 +42,22 @@ def test_build_provider_real_with_key(settings):
     assert not isinstance(provider, MockProvider)
 
 
+def test_provider_fallback_initialization(settings):
+    settings = settings.model_copy(
+        update={
+            "llm_api_key": "sk-primary",
+            "llm_fallback_base_url": "https://fallback.example.com/v1",
+            "llm_fallback_api_key": "sk-fallback",
+            "llm_fallback_model": "fallback-model",
+        }
+    )
+    provider = build_provider(settings)
+    assert provider.fallback is not None
+    assert provider.fallback.model == "fallback-model"
+    assert provider.fallback._semaphore is provider._semaphore
+    assert provider.fallback.fallback is None
+
+
 def test_approx_tokens():
     assert approx_tokens("") == 1
     assert approx_tokens("a" * 400) == 100
