@@ -1,4 +1,4 @@
-"""FSM-состояния."""
+"""FSM состояния Telegram-бота."""
 
 from __future__ import annotations
 
@@ -11,3 +11,7 @@ class KnowledgeStates(StatesGroup):
 
 class ConfirmStates(StatesGroup):
     waiting_forget = State()
+
+
+class GameStates(StatesGroup):
+    in_game = State()
