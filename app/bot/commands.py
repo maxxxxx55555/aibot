@@ -15,6 +15,7 @@ logger = logging.getLogger(__name__)
 
 BOT_COMMANDS: tuple[tuple[str, str], ...] = (
     ("start", "Начать работу"),
+    ("game", "🎮 Тренажёр продаж (Симулятор AI)"),
     ("help", "Справка и возможности"),
     ("stats", "Мой тариф и остаток лимита"),
     ("buy", "Тарифы и оплата (Stars)"),
