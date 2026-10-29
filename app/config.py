@@ -89,7 +89,7 @@ class Settings(BaseSettings):
     support_username: str = ""  # @username поддержки (показывается в /help и ошибках)
     retention_days: int = 90  # хранение истории сообщений (0 = отключено)
 
-    # --- Webhook (prod) / health ---
+    # --- Webhook (prod) / health / WebApp ---
     webhook_mode: bool = False  # False = long polling (dev), True = webhook (prod)
     webhook_base_url: str = ""  # https://bot.example.com
     webhook_secret_path: str = "tg-webhook"  # путь: {webhook_base_url}/{webhook_secret_path}
@@ -102,6 +102,13 @@ class Settings(BaseSettings):
 
     # --- Misc ---
     log_level: str = "INFO"
+
+    @property
+    def webapp_url(self) -> str:
+        """Динамический URL WebApp приложения."""
+        if self.webhook_base_url:
+            return f"{self.webhook_base_url.rstrip('/')}/game_app"
+        return ""
 
     @property
     def admin_id_set(self) -> set[int]:
