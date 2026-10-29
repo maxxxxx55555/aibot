@@ -1,11 +1,12 @@
-"""Точка входа: сборка (engine, storage, dispatcher, сервисы) и запуск.
+"""Точка входа Telegram AI-Сотрудника.
 
-Режимы (WEBHOOK_MODE в .env):
-- False (по умолчанию): long polling + локальный health-сервер /health
-- True: aiohttp-сервер на WEBAPP_PORT — приём апдейтов
-  {WEBHOOK_BASE_URL}/{WEBHOOK_SECRET_PATH} + /health (ARCHITECTURE.md §9.3, §10)
+- Переключение режимов через ENV (WEBHOOK_MODE=1 / 0)
+- REST-сервер aiohttp: WebApp и /health (LB, Docker, Render, Railway)
+- Единый жизненный цикл приложения (graceful shutdown)
+- Автосоздание каталога под SQLite и автоприменение Alembic-миграций (§2, §10)
 
-Запуск: python -m app.main  (или ai-employee после pip install -e .)
+Запуск:
+    python -m app.main  (или uvicorn / gunicorn, или pip install -e .)
 Миграции: alembic upgrade head
 """
 
@@ -16,6 +17,7 @@ import contextlib
 import logging
 import signal
 import time
+from pathlib import Path
 
 from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
@@ -31,6 +33,7 @@ from app.bot.middlewares.user import UserMiddleware
 from app.bot.router import build_router
 from app.config import get_settings
 from app.db.base import build_engine, build_sessionmaker, run_migrations
+from app.services.ai.game import SCENARIOS, GameSessionState, SalesGameService
 from app.services.ai.provider import build_provider
 from app.services.ai.rag import RagService
 from app.services.billing.plans import PlanCatalog
@@ -85,11 +88,12 @@ async def start_webapp(
     host: str, port: int, webhook_path: str | None, dp: Dispatcher, bot: Bot,
     webhook_secret: str | None = None,
 ):
-    """aiohttp-сервер: /health всегда + webhook-роут при webhook-режиме."""
+    """aiohttp-сервер: /health всегда + WebApp /game_app + REST API симулятора."""
     from aiogram.webhook.aiohttp_server import SimpleRequestHandler
     from aiohttp import web
 
     app = web.Application()
+    game_service = SalesGameService()
 
     if webhook_path and dp is not None and bot is not None:
         SimpleRequestHandler(dispatcher=dp, bot=bot, secret_token=webhook_secret).register(
@@ -107,7 +111,56 @@ async def start_webapp(
             }
         )
 
+    async def game_app(_request: web.Request) -> web.Response:
+        index_file = Path(__file__).parent / "webapp" / "index.html"
+        if not index_file.exists():
+            return web.Response(text="WebApp UI file not found", status=404)
+        return web.Response(text=index_file.read_text(encoding="utf-8"), content_type="text/html")
+
+    async def api_game_scenarios(_request: web.Request) -> web.Response:
+        data = [
+            {
+                "id": s.id,
+                "title": s.title,
+                "icon": s.icon,
+                "deal_value": s.deal_value,
+                "persona": s.client_persona,
+            }
+            for s in SCENARIOS.values()
+        ]
+        return web.json_response({"scenarios": data})
+
+    async def api_game_start(request: web.Request) -> web.Response:
+        payload = await request.json()
+        scenario_id = payload.get("scenario_id", "b2b")
+        state, intro = game_service.start_game(scenario_id)
+        return web.json_response({"state": state.to_dict(), "intro": intro})
+
+    async def api_game_turn(request: web.Request) -> web.Response:
+        payload = await request.json()
+        raw_state = payload.get("state", {})
+        user_text = payload.get("user_text", "")
+        state = GameSessionState.from_dict(raw_state)
+        new_state, reply, finished = game_service.process_turn(state, user_text)
+        return web.json_response({
+            "state": new_state.to_dict(),
+            "reply": reply,
+            "finished": finished,
+        })
+
+    async def api_game_hint(request: web.Request) -> web.Response:
+        payload = await request.json()
+        raw_state = payload.get("state", {})
+        state = GameSessionState.from_dict(raw_state)
+        hint = game_service.get_hint(state)
+        return web.json_response({"hint": hint})
+
     app.router.add_get("/health", health)
+    app.router.add_get("/game_app", game_app)
+    app.router.add_get("/api/game/scenarios", api_game_scenarios)
+    app.router.add_post("/api/game/start", api_game_start)
+    app.router.add_post("/api/game/turn", api_game_turn)
+    app.router.add_post("/api/game/hint", api_game_hint)
 
     runner = web.AppRunner(app)
     await runner.setup()

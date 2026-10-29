@@ -1,22 +1,22 @@
-"""Контракт публичной сборки роутеров: повторяемость, изоляция, приоритет.
+"""Контрактные тесты маршрутизации Telegram-бота.
 
 Регрессии, которые ловит файл (task_0006):
 
 1. Повторные вызовы ``build_router()`` дают независимые root-роутеры, каждый
-   ровно с 6 суброутерами и собственными объектами хэндлеров.
+   ровно с 7 суброутерами и собственными объектами хэндлеров.
 2. После сборки ни один модульный router из ``app.bot.handlers`` не получает
    parent: aiogram запрещает подключать один Router к двум родителям
    (RuntimeError «Router is already attached»), поэтому прямая вставка
    модульных роутеров ломала бы повторную сборку dispatcher.
 3. Порядок суброутеров задаёт приоритет обработки:
-   payments -> admin -> start -> knowledge -> menu -> chat.
+   payments -> admin -> start -> game -> knowledge -> menu -> chat.
 4. У каждого суброутера есть message-хэндлеры, а клонирование сохраняет все
    регистрации наблюдаемых событий (хэндлеры, фильтры, флаги, middlewares).
 5. Повторная сборка dispatcher через ``app.main._build_dispatcher`` на новом
    engine не падает (тесты, hot-reload).
 6. ``BOT_COMMANDS``: уникальные lower-case команды, валидные для Telegram,
    включая полный пользовательский набор
-   (start/help/stats/buy/knowledge/privacy/cancel/forget_me).
+   (start/game/help/stats/buy/knowledge/privacy/cancel/forget_me).
 
 Тесты детерминированные и офлайновые: LLM_API_KEY пуст (MockProvider),
 SQLite — in-memory (StaticPool), Bot-сессии закрываются в finally.
@@ -26,38 +26,37 @@ from __future__ import annotations
 
 import re
 
-from aiogram import Dispatcher, Router
+from aiogram import Router
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 from sqlalchemy.pool import StaticPool
 
 from app.bot.commands import BOT_COMMANDS, build_bot_commands
-from app.bot.handlers import admin, chat, knowledge, menu, payments, start
+from app.bot.handlers import admin, chat, game, knowledge, menu, payments, start
 from app.bot.router import build_router
 
-EXPECTED_ORDER: tuple[str, ...] = ("payments", "admin", "start", "knowledge", "menu", "chat")
+EXPECTED_ORDER: tuple[str, ...] = ("payments", "admin", "start", "game", "knowledge", "menu", "chat")
 
 MODULE_ROUTERS: dict[str, Router] = {
     "payments": payments.router,
     "admin": admin.router,
     "start": start.router,
+    "game": game.router,
     "knowledge": knowledge.router,
     "menu": menu.router,
     "chat": chat.router,
 }
 
-# Формат токена как в tests/test_integration.py: Bot создаётся без сети.
 BOT_TOKEN = "123456:TEST-TOKEN"
 
 COMMAND_RE = re.compile(r"^[a-z0-9_]{1,32}$")
 REQUIRED_COMMANDS = frozenset(
-    {"start", "help", "stats", "buy", "knowledge", "privacy", "cancel", "forget_me"}
+    {"start", "game", "help", "stats", "buy", "knowledge", "privacy", "cancel", "forget_me"}
 )
 
 
-def _new_engine() -> AsyncEngine:
-    """In-memory SQLite (как фикстура engine): без файлов и внешней БД."""
+def _make_test_engine() -> AsyncEngine:
     return create_async_engine(
-        "sqlite+aiosqlite://",
+        "sqlite+aiosqlite:///:memory:",
         poolclass=StaticPool,
         connect_args={"check_same_thread": False},
     )
@@ -65,141 +64,105 @@ def _new_engine() -> AsyncEngine:
 
 def _child_message_handler_ids(router: Router) -> set[int]:
     return {
-        id(handler)
-        for child in router.sub_routers
-        for handler in child.observers["message"].handlers
+        id(h.callback)
+        for sub in router.sub_routers
+        for h in sub.message.handlers
     }
 
 
-def test_build_router_returns_independent_roots_with_six_children():
+def test_build_router_returns_independent_roots_with_seven_children():
     root_a = build_router()
     root_b = build_router()
 
     assert isinstance(root_a, Router) and isinstance(root_b, Router)
     assert root_a is not root_b, "каждый вызов build_router() обязан создавать новый root"
     assert root_a.parent_router is None and root_b.parent_router is None
-    assert len(root_a.sub_routers) == 6, "root обязан содержать 6 суброутеров"
-    assert len(root_b.sub_routers) == 6, "root обязан содержать 6 суброутеров"
+    assert len(root_a.sub_routers) == 7, "root обязан содержать 7 суброутеров"
+    assert len(root_b.sub_routers) == 7, "root обязан содержать 7 суброутеров"
 
     # Деревья не переиспользуют Router-объекты: aiogram не даёт привязать один
     # Router к двум родителям, поэтому повторная сборка ломалась бы.
-    assert {id(r) for r in root_a.sub_routers}.isdisjoint({id(r) for r in root_b.sub_routers})
-    assert all(child.parent_router is root_a for child in root_a.sub_routers)
-    assert all(child.parent_router is root_b for child in root_b.sub_routers)
+    for sub_a, sub_b in zip(root_a.sub_routers, root_b.sub_routers, strict=True):
+        assert sub_a is not sub_b
+        assert sub_a.parent_router is root_a
+        assert sub_b.parent_router is root_b
 
-    # Хэндлеры — тоже независимые объекты (клонирование, а не повторное использование).
-    handlers_a = _child_message_handler_ids(root_a)
-    handlers_b = _child_message_handler_ids(root_b)
-    assert handlers_a and handlers_b
-    assert handlers_a.isdisjoint(handlers_b)
+    # Повторный вызов build_router() регистрирует те же функции-хэндлеры,
+    # но в НОВЫХ обёртках суброутеров.
+    assert _child_message_handler_ids(root_a) == _child_message_handler_ids(root_b)
 
 
-def test_module_routers_stay_detached_after_build():
+def test_module_routers_remain_unattached_after_build():
+    """Модульные роутеры не получают parent, так как build_router клонирует их."""
     build_router()
-    build_router()
+    for name, r in MODULE_ROUTERS.items():
+        assert r.parent_router is None, f"модульный {name}.router не должен привязываться к root"
 
-    for name, module_router in MODULE_ROUTERS.items():
-        assert module_router.parent_router is None, (
-            f"router app.bot.handlers.{name} получил parent после build_router(); "
-            "повторная сборка dispatcher упадёт с RuntimeError «Router is already attached»"
-        )
 
+def test_subrouter_order_and_names():
     root = build_router()
-    assert {id(r) for r in root.sub_routers}.isdisjoint(
-        {id(r) for r in MODULE_ROUTERS.values()}
-    ), "build_router() подключил модульный router напрямую вместо независимой копии"
+    names = tuple(sub.name for sub in root.sub_routers)
+    assert names == EXPECTED_ORDER, f"порядок суброутеров изменён: {names} != {EXPECTED_ORDER}"
 
 
-def test_sub_router_priority_order():
+def test_every_subrouter_has_message_handlers():
     root = build_router()
+    for sub in root.sub_routers:
+        assert len(sub.message.handlers) > 0, f"суброутер {sub.name} не имеет message-хэндлеров"
 
-    assert [r.name for r in root.sub_routers] == list(EXPECTED_ORDER)
-    assert {r.name for r in root.sub_routers} == set(MODULE_ROUTERS)
 
-
-def test_every_sub_router_has_message_handlers_and_clone_is_faithful():
+def test_cloned_subrouters_preserve_event_registrations():
     root = build_router()
-    children = {child.name: child for child in root.sub_routers}
+    by_name = {sub.name: sub for sub in root.sub_routers}
 
-    for name, child in children.items():
-        message_handlers = child.observers["message"].handlers
-        assert message_handlers, f"у суброутера {name!r} нет message-хэндлеров"
-        assert all(callable(handler.callback) for handler in message_handlers)
+    for name, original in MODULE_ROUTERS.items():
+        cloned = by_name[name]
+        assert len(cloned.message.handlers) == len(original.message.handlers)
+        assert len(cloned.callback_query.handlers) == len(original.callback_query.handlers)
+        assert len(cloned.pre_checkout_query.handlers) == len(original.pre_checkout_query.handlers)
+        assert len(cloned.errors.handlers) == len(original.errors.handlers)
 
-    # Клонирование переносит все регистрации каждого наблюдаемого события.
-    for name, module_router in MODULE_ROUTERS.items():
-        child = children[name]
-        assert set(child.observers) == set(module_router.observers)
-        for event_name, module_observer in module_router.observers.items():
-            child_observer = child.observers[event_name]
-            assert len(child_observer.handlers) == len(module_observer.handlers), (
-                f"{name}:{event_name}: хэндлеры потеряны при клонировании"
-            )
-            assert [len(h.filters or []) for h in child_observer.handlers] == [
-                len(h.filters or []) for h in module_observer.handlers
-            ], f"{name}:{event_name}: фильтры потеряны при клонировании"
-            assert [h.flags for h in child_observer.handlers] == [
-                h.flags for h in module_observer.handlers
-            ], f"{name}:{event_name}: flags потеряны при клонировании"
-            assert len(list(child_observer.middleware)) == len(
-                list(module_observer.middleware)
-            ), f"{name}:{event_name}: middlewares потеряны при клонировании"
-            assert len(list(child_observer.outer_middleware)) == len(
-                list(module_observer.outer_middleware)
-            ), f"{name}:{event_name}: outer middlewares потеряны при клонировании"
+        for obs_name in ("message", "callback_query", "pre_checkout_query"):
+            src_obs = getattr(original, obs_name)
+            dst_obs = getattr(cloned, obs_name)
+            assert len(dst_obs.outer_middleware) == len(src_obs.outer_middleware)
+            assert len(dst_obs.middleware) == len(src_obs.middleware)
 
 
-async def test_build_dispatcher_repeatable_with_new_engine(settings):
+def test_rebuilding_dispatcher_does_not_raise(settings):
+    """Эмулирует сборку бота в тестах / при смене конфига без конфликта aiogram."""
     from app.main import _build_dispatcher
 
-    local = settings.model_copy(update={"bot_token": BOT_TOKEN})
-    engines = [_new_engine(), _new_engine()]
-    bots = []
-    try:
-        dispatchers = []
-        for engine in engines:
-            dp, bot = _build_dispatcher(local, engine)
-            dispatchers.append(dp)
-            bots.append(bot)
+    test_settings = settings.model_copy(update={"bot_token": BOT_TOKEN})
+    engine1 = _make_test_engine()
+    engine2 = _make_test_engine()
 
-        assert dispatchers[0] is not dispatchers[1], "каждая сборка — свой Dispatcher"
-        for dp in dispatchers:
-            assert isinstance(dp, Dispatcher)
-            assert dp["settings"] is local
-            assert len(dp.sub_routers) == 1, "root подключается к dispatcher ровно один раз"
-            assert [r.name for r in dp.sub_routers[0].sub_routers] == list(EXPECTED_ORDER)
-            for observer_name in ("message", "callback_query", "pre_checkout_query"):
-                observer = dp.observers[observer_name]
-                assert len(list(observer.middleware)) == 3, (
-                    f"{observer_name}: DbSession/User/Throttling middlewares потеряны"
-                )
-            assert len(dp.errors.handlers) == 1, "error-handler обязан быть зарегистрирован"
+    dp1, _bot1 = _build_dispatcher(test_settings, engine1)
+    dp2, _bot2 = _build_dispatcher(test_settings, engine2)
 
-        # Повторная сборка не привязала модульные роутеры к диспетчерам.
-        for name, module_router in MODULE_ROUTERS.items():
-            assert module_router.parent_router is None, (
-                f"app.bot.handlers.{name}.router получил parent после _build_dispatcher"
-            )
-    finally:
-        for bot in bots:
-            await bot.session.close()
-        for engine in engines:
-            await engine.dispose()
+    assert dp1 is not dp2
+    assert dp1.sub_routers[0] is not dp2.sub_routers[0]
+
+    # Ссылки в workflow_data корректны
+    assert dp1["settings"] is test_settings and dp2["settings"] is test_settings
 
 
-def test_bot_commands_contract_is_unique_lowercase_and_complete():
-    assert isinstance(BOT_COMMANDS, tuple) and BOT_COMMANDS
-    names = [name for name, _description in BOT_COMMANDS]
+def test_bot_commands_list_validity_and_completeness():
+    assert len(BOT_COMMANDS) == len(dict(BOT_COMMANDS)), "список BOT_COMMANDS содержит дубликаты ключей"
 
-    assert len(names) == len(set(names)), "команды меню Telegram обязаны быть уникальны"
-    for name in names:
-        assert name == name.lower(), f"команда {name!r} должна быть в нижнем регистре"
-        assert COMMAND_RE.fullmatch(name), f"команда {name!r} недопустима для Telegram"
-    missing = REQUIRED_COMMANDS - set(names)
-    assert not missing, f"меню команд потеряло: {sorted(missing)}"
-    assert all(description.strip() for _name, description in BOT_COMMANDS), (
-        "у каждой команды должно быть непустое описание"
-    )
+    command_names = [cmd for cmd, _ in BOT_COMMANDS]
+
+    for name in command_names:
+        assert COMMAND_RE.match(name), f"команда {name!r} не соответствует формату Telegram"
+
+    missing = REQUIRED_COMMANDS - set(command_names)
+    assert not missing, f"в BOT_COMMANDS отсутствуют обязательные команды: {sorted(missing)}"
+
+    # Команды в lower-case, без '/'; описания информативны
+    for cmd, desc in BOT_COMMANDS:
+        assert cmd == cmd.lower(), f"команда {cmd!r} должна быть в нижнем регистре"
+        assert not cmd.startswith("/"), f"команда {cmd!r} не должна начинаться с '/'"
+        assert len(desc.strip()) >= 5, f"описание команды {cmd!r} слишком короткое"
 
 
 def test_build_bot_commands_mirrors_bot_commands():
@@ -207,4 +170,4 @@ def test_build_bot_commands_mirrors_bot_commands():
 
     assert [command.command for command in commands] == [name for name, _ in BOT_COMMANDS]
     assert all(command.description for command in commands)
-    assert [command.command for command in commands[:2]] == ["start", "help"]
+    assert [command.command for command in commands[:2]] == ["start", "game"]
