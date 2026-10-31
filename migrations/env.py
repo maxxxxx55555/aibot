@@ -20,7 +20,14 @@ if config.config_file_name is not None:
 target_metadata = Base.metadata
 
 # URL — единственный источник истины: .env → app.config
-config.set_main_option("sqlalchemy.url", get_settings().database_url)
+db_url = get_settings().database_url
+config.set_main_option("sqlalchemy.url", db_url)
+
+# Гарантируем наличие директории для SQLite файла до подключения
+if db_url.startswith("sqlite"):
+    from app.db.base import _ensure_sqlite_dir
+
+    _ensure_sqlite_dir(db_url)
 
 
 def include_object(
