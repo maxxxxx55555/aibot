@@ -75,3 +75,33 @@ async def test_forget_me_cascades(session, settings):
     repo = KnowledgeRepo(session)
     await repo.delete_for_owner(user.id)
     assert await repo.for_owner(user.id) == []
+
+
+async def test_knowledge_repo_count_for_owner_and_user_repo_count_all(session):
+    u1 = await UserRepo(session).get_or_create(10)
+    u2 = await UserRepo(session).get_or_create(11)
+    k_repo = KnowledgeRepo(session)
+    u_repo = UserRepo(session)
+
+    assert await k_repo.count_for_owner(u1.id) == 0
+    await k_repo.add_chunk(u1.id, "chunk 1")
+    await k_repo.add_chunk(u1.id, "chunk 2")
+    await k_repo.add_chunk(u2.id, "chunk 3")
+
+    assert await k_repo.count_for_owner(u1.id) == 2
+    assert await k_repo.count_for_owner(u2.id) == 1
+    assert await u_repo.count_all() >= 2
+
+
+async def test_chroma_vector_store_count(settings, monkeypatch):
+    from app.services.ai.vector_store import ChromaVectorStore
+
+    class FakeCollection:
+        def get(self, where, include):
+            assert where == {"owner_id": 42}
+            return {"ids": ["id1", "id2"]}
+
+    store = ChromaVectorStore.__new__(ChromaVectorStore)
+    store._col = FakeCollection()
+
+    assert await store.count(42) == 2
