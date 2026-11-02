@@ -1,6 +1,6 @@
 import datetime as dt
 
-from sqlalchemy import select, update
+from sqlalchemy import func, select, update
 
 from app.db.models.base import utcnow
 from app.db.models.user import User
@@ -52,4 +52,4 @@ class UserRepo(BaseRepo[User]):
         await self.session.flush()
 
     async def count_all(self) -> int:
-        return len((await self.session.execute(select(User.id))).all())
+        return (await self.session.execute(select(func.count(User.id)))).scalar_one() or 0
