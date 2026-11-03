@@ -97,3 +97,28 @@ async def test_vector_store_factory_chroma_fallback_without_pkg(session, setting
         assert not isinstance(store, SQLiteVectorStore)
     else:
         assert isinstance(store, SQLiteVectorStore)
+
+
+def test_alembic_cli_creates_sqlite_dir_and_migrates(tmp_path, monkeypatch):
+    """Alembic CLI создаёт несуществующий каталог и корректно применяет/откатывает миграции."""
+    from alembic import command
+    from alembic.config import Config
+
+    from app.config import BASE_DIR, get_settings
+
+    db_path = tmp_path / "nested" / "dir" / "test_migration.db"
+    new_url = f"sqlite+aiosqlite:///{db_path.as_posix()}"
+    monkeypatch.setenv("DATABASE_URL", new_url)
+    get_settings.cache_clear()
+
+    alembic_cfg = Config(str(BASE_DIR / "alembic.ini"))
+    alembic_cfg.set_main_option("script_location", str(BASE_DIR / "migrations"))
+
+    try:
+        assert not db_path.parent.exists()
+        command.upgrade(alembic_cfg, "head")
+        assert db_path.exists()
+        command.downgrade(alembic_cfg, "base")
+        command.upgrade(alembic_cfg, "head")
+    finally:
+        get_settings.cache_clear()
