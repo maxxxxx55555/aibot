@@ -104,6 +104,13 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
 
     @property
+    def webapp_url(self) -> str:
+        """Динамический URL WebApp приложения."""
+        if self.webhook_base_url:
+            return f"{self.webhook_base_url.rstrip('/')}/game_app"
+        return ""
+
+    @property
     def admin_id_set(self) -> set[int]:
         """ADMIN_IDS терпим к формату: «1,2 3;4», пробелы, мусор — пропускаем с варнингом."""
         if not self.admin_ids.strip():
